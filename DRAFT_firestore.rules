@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTaskItem(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.dueTime is string && data.dueTime.size() >= 1 && data.dueTime.size() <= 60 &&
+             data.completed is bool &&
+             data.priority is string && data.priority in ['HIGH', 'MEDIUM', 'LOW'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMeetingAlert(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             data.startTime is string && data.startTime.size() >= 1 && data.startTime.size() <= 60 &&
+             data.remindBeforeMinutes is int && data.remindBeforeMinutes >= 0 && data.remindBeforeMinutes <= 1440 &&
+             data.isUrgent is bool &&
+             data.notes is string && data.notes.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMemoryEntry(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 2000 &&
+             data.tag is string && data.tag.size() >= 1 && data.tag.size() <= 60 &&
+             data.emotionContext is string && data.emotionContext.size() >= 1 && data.emotionContext.size() <= 60 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMoodLog(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.emotion is string && data.emotion.size() >= 1 && data.emotion.size() <= 60 &&
+             data.soulMode is string && data.soulMode.size() >= 1 && data.soulMode.size() <= 60 &&
+             data.note is string && data.note.size() <= 1000 &&
+             data.energyScore is int && data.energyScore >= 1 && data.energyScore <= 100 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/tasks/{taskId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(taskId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(taskId) &&
+                       incoming().keys().hasAll(['userId', 'title', 'category', 'dueTime', 'completed', 'priority', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'title', 'category', 'dueTime', 'completed', 'priority', 'createdAt', 'updatedAt']) &&
+                       isValidTaskItem(incoming());
+      allow update: if (
+        isSignedIn() && isValidTaskItem(incoming()) && (
+          request.auth.uid == userId &&
+          isValidId(userId) &&
+          isValidId(taskId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'dueTime', 'completed', 'priority', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(taskId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/meetings/{meetingId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(meetingId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(meetingId) &&
+                       incoming().keys().hasAll(['userId', 'title', 'startTime', 'remindBeforeMinutes', 'isUrgent', 'notes', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'title', 'startTime', 'remindBeforeMinutes', 'isUrgent', 'notes', 'createdAt', 'updatedAt']) &&
+                       isValidMeetingAlert(incoming());
+      allow update: if (
+        isSignedIn() && isValidMeetingAlert(incoming()) && (
+          request.auth.uid == userId &&
+          isValidId(userId) &&
+          isValidId(meetingId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'startTime', 'remindBeforeMinutes', 'isUrgent', 'notes', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(meetingId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/memories/{memoryId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(memoryId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(memoryId) &&
+                       incoming().keys().hasAll(['userId', 'content', 'tag', 'emotionContext', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'content', 'tag', 'emotionContext', 'createdAt', 'updatedAt']) &&
+                       isValidMemoryEntry(incoming());
+      allow update: if (
+        isSignedIn() && isValidMemoryEntry(incoming()) && (
+          request.auth.uid == userId &&
+          isValidId(userId) &&
+          isValidId(memoryId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['content', 'tag', 'emotionContext', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(memoryId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/moods/{moodId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(moodId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(moodId) &&
+                       incoming().keys().hasAll(['userId', 'emotion', 'soulMode', 'note', 'energyScore', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'emotion', 'soulMode', 'note', 'energyScore', 'createdAt', 'updatedAt']) &&
+                       isValidMoodLog(incoming());
+      allow update: if (
+        isSignedIn() && isValidMoodLog(incoming()) && (
+          request.auth.uid == userId &&
+          isValidId(userId) &&
+          isValidId(moodId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['emotion', 'soulMode', 'note', 'energyScore', 'updatedAt'])
+        )
+      );
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(moodId) && existing().userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "entities": {
+    "TaskItem": {
+      "title": "TaskItem",
+      "description": "A daily task or routine item managed by Archer AI for an authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Task or routine title."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category such as Routine, Urgent, Work, Personal."
+        },
+        "dueTime": {
+          "type": "string",
+          "description": "Scheduled time string (e.g., 09:00 AM)."
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether the task is completed."
+        },
+        "priority": {
+          "type": "string",
+          "description": "Priority level: HIGH, MEDIUM, LOW."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "title", "category", "dueTime", "completed", "priority", "createdAt", "updatedAt"]
+    },
+    "MeetingAlert": {
+      "title": "MeetingAlert",
+      "description": "An upcoming meeting or routine event with proactive early reminder settings.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Meeting or event title."
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Formatted meeting start time (e.g., 04:30 PM)."
+        },
+        "remindBeforeMinutes": {
+          "type": "integer",
+          "description": "Minutes before the meeting to trigger an alert."
+        },
+        "isUrgent": {
+          "type": "boolean",
+          "description": "Whether this is an urgent high-priority meeting."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Agenda or AI-generated meeting summary."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "title", "startTime", "remindBeforeMinutes", "isUrgent", "notes", "createdAt", "updatedAt"]
+    },
+    "MemoryEntry": {
+      "title": "MemoryEntry",
+      "description": "A personal fact, preference, or voice note stored in the Archer AI Smart Memory Vault.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "content": {
+          "type": "string",
+          "description": "The remembered fact, preference, or voice note text."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Memory tag: Personal, Preference, Important, VoiceNote."
+        },
+        "emotionContext": {
+          "type": "string",
+          "description": "Detected user emotion when saved."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "content", "tag", "emotionContext", "createdAt", "updatedAt"]
+    },
+    "MoodLog": {
+      "title": "MoodLog",
+      "description": "An emotion and situation log entry recorded by the Soul & Mood Engine.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner."
+        },
+        "emotion": {
+          "type": "string",
+          "description": "Detected mood/emotion label (e.g., Calm, Happy, Stressed, Focused, Tired)."
+        },
+        "soulMode": {
+          "type": "string",
+          "description": "Active AI soul personality mode."
+        },
+        "note": {
+          "type": "string",
+          "description": "Brief context or AI observation."
+        },
+        "energyScore": {
+          "type": "integer",
+          "description": "Energy level from 1 to 100."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "emotion", "soulMode", "note", "energyScore", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/TaskItem" },
+      "description": "User-scoped daily tasks and routines."
+    },
+    "/users/{userId}/meetings/{meetingId}": {
+      "schema": { "$ref": "#/entities/MeetingAlert" },
+      "description": "User-scoped meetings and proactive reminder alerts."
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/MemoryEntry" },
+      "description": "User-scoped smart memory vault entries and voice notes."
+    },
+    "/users/{userId}/moods/{moodId}": {
+      "schema": { "$ref": "#/entities/MoodLog" },
+      "description": "User-scoped emotion and mood tracking logs."
+    }
+  }
+}

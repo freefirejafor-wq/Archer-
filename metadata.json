@@ -1,0 +1,6 @@
+{
+  "name": "Archer AI",
+  "description": "An emotion-aware bilingual (Bengali & English) voice AI assistant with a neon HUD, 3D particle orb, smart memory vault, proactive routine & meeting alerts, and direct mobile action execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
