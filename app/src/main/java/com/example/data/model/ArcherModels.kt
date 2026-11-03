@@ -149,11 +149,90 @@ enum class MobileActionType {
     OPEN_SOUL_SCREEN,
     OPEN_TASKS_SCREEN,
     OPEN_SETTINGS_SCREEN,
+    OPEN_VISION_SCANNER,
+    OPEN_CREATOR_STUDIO,
+    OPEN_EXPENSE_TRACKER,
     READ_NOTIFICATIONS,
     MACRO_GOOD_MORNING,
     MACRO_CREATOR_MODE,
-    MACRO_SLEEP_MODE
+    MACRO_SLEEP_MODE,
+    LOG_VOICE_EXPENSE,
+    GENERATE_CREATOR_SCRIPT,
+    GENERATE_AI_IMAGE,
+    SWITCH_CYBER_THEME
 }
+
+enum class CyberThemeMode(
+    val id: String,
+    val titleBn: String,
+    val titleEn: String,
+    val primaryHex: Long,
+    val secondaryHex: Long,
+    val accentHex: Long
+) {
+    MATRIX_GREEN(
+        id = "MATRIX_GREEN",
+        titleBn = "Matrix Green (ক্লাসিক নিওন গ্রিন)",
+        titleEn = "Matrix Green",
+        primaryHex = 0xFF00FF66,
+        secondaryHex = 0xFF00E5FF,
+        accentHex = 0xFFFFB300
+    ),
+    CYBERPUNK_RED(
+        id = "CYBERPUNK_RED",
+        titleBn = "Cyberpunk Red (নিওন ক্রিমসন ও গোল্ড)",
+        titleEn = "Cyberpunk Red",
+        primaryHex = 0xFFFF1744,
+        secondaryHex = 0xFFFFEA00,
+        accentHex = 0xFF00E5FF
+    ),
+    IRON_MAN_GOLD(
+        id = "IRON_MAN_GOLD",
+        titleBn = "Iron-Man Gold/Cyan (আর্ক রিঅ্যাক্টর)",
+        titleEn = "Iron-Man Gold/Cyan",
+        primaryHex = 0xFF00E5FF,
+        secondaryHex = 0xFFFFD54F,
+        accentHex = 0xFFFF5252
+    ),
+    STEALTH_PURPLE(
+        id = "STEALTH_PURPLE",
+        titleBn = "Stealth Purple (আল্ট্রাভায়োলেট নিওন)",
+        titleEn = "Stealth Purple",
+        primaryHex = 0xFFD500F9,
+        secondaryHex = 0xFF00E5FF,
+        accentHex = 0xFF00E676
+    )
+}
+
+data class ExpenseEntry(
+    val id: String,
+    val title: String,
+    val amountBdt: Int,
+    val category: String,
+    val timestampLabel: String
+)
+
+data class HabitItem(
+    val id: String,
+    val title: String,
+    val streakDays: Int,
+    val completedToday: Boolean
+)
+
+data class VisionScanResult(
+    val summaryBn: String,
+    val translationBn: String = "",
+    val extractedTasks: List<String> = emptyList(),
+    val extractedMeetings: List<String> = emptyList()
+)
+
+data class CreatorScriptResult(
+    val topic: String,
+    val viralHook: String,
+    val fullScript: String,
+    val caption: String,
+    val hashtags: String
+)
 
 data class DeviceActionCommand(
     val type: MobileActionType = MobileActionType.NONE,
