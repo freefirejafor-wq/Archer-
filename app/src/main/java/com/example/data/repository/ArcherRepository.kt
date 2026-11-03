@@ -7,59 +7,85 @@ import com.example.data.model.MeetingAlert
 import com.example.data.model.MemoryEntry
 import com.example.data.model.MoodLog
 import com.example.data.model.TaskItem
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
+import com.google.firebase.FirebaseApp
+import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 
-class ArcherRepository(private val db: FirebaseFirestore) {
+class ArcherRepository(private val db: FirebaseFirestore? = null) {
 
     constructor(context: Context) : this(resolveFirestore(context))
 
     companion object {
-        private fun resolveFirestore(context: Context): FirebaseFirestore {
-            val appCtx = context.applicationContext
-            val resId = appCtx.resources.getIdentifier("firestore_database_id", "string", appCtx.packageName)
-            val dbId = if (resId != 0) appCtx.getString(resId) else "(default)"
-            return FirebaseFirestore.getInstance(dbId)
+        private fun resolveFirestore(context: Context): FirebaseFirestore? {
+            return try {
+                val appCtx = context.applicationContext
+                if (FirebaseApp.getApps(appCtx).isEmpty()) return null
+                val resId = appCtx.resources.getIdentifier("firestore_database_id", "string", appCtx.packageName)
+                val dbId = if (resId != 0) appCtx.getString(resId) else "(default)"
+                FirebaseFirestore.getInstance(dbId)
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
-    private val auth = Firebase.auth
+    private val auth: FirebaseAuth?
+        get() = try {
+            FirebaseAuth.getInstance()
+        } catch (_: Throwable) {
+            null
+        }
+
+    // Local device fallback state when running standalone APK without google-services.json
+    private val localTasksFlow = MutableStateFlow<List<TaskItem>>(emptyList())
+    private val localMeetingsFlow = MutableStateFlow<List<MeetingAlert>>(emptyList())
+    private val localMemoriesFlow = MutableStateFlow<List<MemoryEntry>>(emptyList())
+    private val localMoodsFlow = MutableStateFlow<List<MoodLog>>(emptyList())
 
     private fun requireUserId(): String {
-        return auth.currentUser?.uid
+        if (db == null) {
+            return auth?.currentUser?.uid ?: "local_archer_user"
+        }
+        return auth?.currentUser?.uid
             ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
     }
 
     // --- TASKS & DAILY ROUTINES ---
 
-    fun observeTasks(userId: String = requireUserId()): Flow<List<TaskItem>> = flow {
-        val path = "users/$userId/tasks"
-        emitAll(
-            db.collection("users").document(userId).collection("tasks")
-                .whereEqualTo("userId", userId)
-                .snapshots()
-                .map { snapshot ->
-                    snapshot.toObjects(
-                        TaskItem::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
-                }
-                .catch { error ->
-                    if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
-                    throw error
-                }
-        )
+    fun observeTasks(userId: String = requireUserId()): Flow<List<TaskItem>> {
+        val firestore = db ?: return localTasksFlow.asStateFlow()
+        return flow {
+            val path = "users/$userId/tasks"
+            emitAll(
+                firestore.collection("users").document(userId).collection("tasks")
+                    .whereEqualTo("userId", userId)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            TaskItem::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+                    .catch { error ->
+                        if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                        throw error
+                    }
+            )
+        }
     }
 
     suspend fun createTask(
@@ -68,8 +94,27 @@ class ArcherRepository(private val db: FirebaseFirestore) {
         dueTime: String = "10:00 AM",
         priority: String = "HIGH"
     ): Result<String> = runCatching {
+        val firestore = db
+        if (firestore == null) {
+            val id = UUID.randomUUID().toString()
+            val now = Timestamp.now()
+            val item = TaskItem(
+                id = id,
+                userId = "local_archer_user",
+                title = title.trim().take(300).ifEmpty { "New Task" },
+                category = category.trim().take(60).ifEmpty { "Routine" },
+                dueTime = dueTime.trim().take(60).ifEmpty { "10:00 AM" },
+                completed = false,
+                priority = if (priority in listOf("HIGH", "MEDIUM", "LOW")) priority else "HIGH",
+                createdAt = now,
+                updatedAt = now
+            )
+            localTasksFlow.value = listOf(item) + localTasksFlow.value
+            return@runCatching id
+        }
+
         val uid = requireUserId()
-        val tasksRef = db.collection("users").document(uid).collection("tasks")
+        val tasksRef = firestore.collection("users").document(uid).collection("tasks")
         val docRef = tasksRef.document()
         val payload = mapOf(
             "userId" to uid,
@@ -93,7 +138,8 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun getTaskById(userOwnerId: String, taskId: String): Result<TaskItem?> = runCatching {
-        val docRef = db.collection("users").document(userOwnerId).collection("tasks").document(taskId)
+        val firestore = db ?: return@runCatching localTasksFlow.value.find { it.id == taskId }
+        val docRef = firestore.collection("users").document(userOwnerId).collection("tasks").document(taskId)
         try {
             val snapshot = docRef.get().await()
             snapshot.toObject(TaskItem::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
@@ -106,10 +152,17 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun toggleTaskCompleted(task: TaskItem) {
+        val firestore = db
+        if (firestore == null) {
+            localTasksFlow.value = localTasksFlow.value.map {
+                if (it.id == task.id) it.copy(completed = !it.completed, updatedAt = Timestamp.now()) else it
+            }
+            return
+        }
         val uid = requireUserId()
         require(task.id.isNotBlank()) { "Task ID must not be blank for update" }
         requireNotNull(task.createdAt) { "Task createdAt must not be null for update" }
-        val docRef = db.collection("users").document(uid).collection("tasks").document(task.id)
+        val docRef = firestore.collection("users").document(uid).collection("tasks").document(task.id)
         try {
             docRef.set(task.copy(completed = !task.completed, updatedAt = null)).await()
         } catch (e: CancellationException) {
@@ -121,8 +174,13 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun deleteTask(taskId: String) {
+        val firestore = db
+        if (firestore == null) {
+            localTasksFlow.value = localTasksFlow.value.filterNot { it.id == taskId }
+            return
+        }
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("tasks").document(taskId)
+        val docRef = firestore.collection("users").document(uid).collection("tasks").document(taskId)
         try {
             docRef.delete().await()
         } catch (e: CancellationException) {
@@ -135,23 +193,26 @@ class ArcherRepository(private val db: FirebaseFirestore) {
 
     // --- MEETINGS & PROACTIVE ALERTS ---
 
-    fun observeMeetings(userId: String = requireUserId()): Flow<List<MeetingAlert>> = flow {
-        val path = "users/$userId/meetings"
-        emitAll(
-            db.collection("users").document(userId).collection("meetings")
-                .whereEqualTo("userId", userId)
-                .snapshots()
-                .map { snapshot ->
-                    snapshot.toObjects(
-                        MeetingAlert::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
-                }
-                .catch { error ->
-                    if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
-                    throw error
-                }
-        )
+    fun observeMeetings(userId: String = requireUserId()): Flow<List<MeetingAlert>> {
+        val firestore = db ?: return localMeetingsFlow.asStateFlow()
+        return flow {
+            val path = "users/$userId/meetings"
+            emitAll(
+                firestore.collection("users").document(userId).collection("meetings")
+                    .whereEqualTo("userId", userId)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            MeetingAlert::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+                    .catch { error ->
+                        if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                        throw error
+                    }
+            )
+        }
     }
 
     suspend fun createMeeting(
@@ -161,8 +222,27 @@ class ArcherRepository(private val db: FirebaseFirestore) {
         isUrgent: Boolean = true,
         notes: String = ""
     ): Result<String> = runCatching {
+        val firestore = db
+        if (firestore == null) {
+            val id = UUID.randomUUID().toString()
+            val now = Timestamp.now()
+            val item = MeetingAlert(
+                id = id,
+                userId = "local_archer_user",
+                title = title.trim().take(300).ifEmpty { "Important Meeting" },
+                startTime = startTime.trim().take(60).ifEmpty { "04:00 PM" },
+                remindBeforeMinutes = remindBeforeMinutes.coerceIn(0L, 1440L),
+                isUrgent = isUrgent,
+                notes = notes.trim().take(2000),
+                createdAt = now,
+                updatedAt = now
+            )
+            localMeetingsFlow.value = listOf(item) + localMeetingsFlow.value
+            return@runCatching id
+        }
+
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("meetings").document()
+        val docRef = firestore.collection("users").document(uid).collection("meetings").document()
         val payload = mapOf(
             "userId" to uid,
             "title" to title.trim().take(300).ifEmpty { "Important Meeting" },
@@ -185,8 +265,13 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun deleteMeeting(meetingId: String) {
+        val firestore = db
+        if (firestore == null) {
+            localMeetingsFlow.value = localMeetingsFlow.value.filterNot { it.id == meetingId }
+            return
+        }
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("meetings").document(meetingId)
+        val docRef = firestore.collection("users").document(uid).collection("meetings").document(meetingId)
         try {
             docRef.delete().await()
         } catch (e: CancellationException) {
@@ -199,23 +284,26 @@ class ArcherRepository(private val db: FirebaseFirestore) {
 
     // --- SMART MEMORY VAULT & VOICE NOTES ---
 
-    fun observeMemories(userId: String = requireUserId()): Flow<List<MemoryEntry>> = flow {
-        val path = "users/$userId/memories"
-        emitAll(
-            db.collection("users").document(userId).collection("memories")
-                .whereEqualTo("userId", userId)
-                .snapshots()
-                .map { snapshot ->
-                    snapshot.toObjects(
-                        MemoryEntry::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
-                }
-                .catch { error ->
-                    if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
-                    throw error
-                }
-        )
+    fun observeMemories(userId: String = requireUserId()): Flow<List<MemoryEntry>> {
+        val firestore = db ?: return localMemoriesFlow.asStateFlow()
+        return flow {
+            val path = "users/$userId/memories"
+            emitAll(
+                firestore.collection("users").document(userId).collection("memories")
+                    .whereEqualTo("userId", userId)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            MemoryEntry::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+                    .catch { error ->
+                        if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                        throw error
+                    }
+            )
+        }
     }
 
     suspend fun createMemory(
@@ -223,8 +311,25 @@ class ArcherRepository(private val db: FirebaseFirestore) {
         tag: String = "Personal",
         emotionContext: String = "Calm"
     ): Result<String> = runCatching {
+        val firestore = db
+        if (firestore == null) {
+            val id = UUID.randomUUID().toString()
+            val now = Timestamp.now()
+            val item = MemoryEntry(
+                id = id,
+                userId = "local_archer_user",
+                content = content.trim().take(2000).ifEmpty { "Saved memory note" },
+                tag = tag.trim().take(60).ifEmpty { "Personal" },
+                emotionContext = emotionContext.trim().take(60).ifEmpty { "Calm" },
+                createdAt = now,
+                updatedAt = now
+            )
+            localMemoriesFlow.value = listOf(item) + localMemoriesFlow.value
+            return@runCatching id
+        }
+
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("memories").document()
+        val docRef = firestore.collection("users").document(uid).collection("memories").document()
         val payload = mapOf(
             "userId" to uid,
             "content" to content.trim().take(2000).ifEmpty { "Saved memory note" },
@@ -245,8 +350,13 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun deleteMemory(memoryId: String) {
+        val firestore = db
+        if (firestore == null) {
+            localMemoriesFlow.value = localMemoriesFlow.value.filterNot { it.id == memoryId }
+            return
+        }
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("memories").document(memoryId)
+        val docRef = firestore.collection("users").document(uid).collection("memories").document(memoryId)
         try {
             docRef.delete().await()
         } catch (e: CancellationException) {
@@ -259,23 +369,26 @@ class ArcherRepository(private val db: FirebaseFirestore) {
 
     // --- MOOD & EMOTION ENGINE LOGS ---
 
-    fun observeMoods(userId: String = requireUserId()): Flow<List<MoodLog>> = flow {
-        val path = "users/$userId/moods"
-        emitAll(
-            db.collection("users").document(userId).collection("moods")
-                .whereEqualTo("userId", userId)
-                .snapshots()
-                .map { snapshot ->
-                    snapshot.toObjects(
-                        MoodLog::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
-                }
-                .catch { error ->
-                    if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
-                    throw error
-                }
-        )
+    fun observeMoods(userId: String = requireUserId()): Flow<List<MoodLog>> {
+        val firestore = db ?: return localMoodsFlow.asStateFlow()
+        return flow {
+            val path = "users/$userId/moods"
+            emitAll(
+                firestore.collection("users").document(userId).collection("moods")
+                    .whereEqualTo("userId", userId)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            MoodLog::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+                    .catch { error ->
+                        if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                        throw error
+                    }
+            )
+        }
     }
 
     suspend fun logMood(
@@ -284,8 +397,26 @@ class ArcherRepository(private val db: FirebaseFirestore) {
         note: String,
         energyScore: Long = 85L
     ): Result<String> = runCatching {
+        val firestore = db
+        if (firestore == null) {
+            val id = UUID.randomUUID().toString()
+            val now = Timestamp.now()
+            val item = MoodLog(
+                id = id,
+                userId = "local_archer_user",
+                emotion = emotion.trim().take(60).ifEmpty { "Calm" },
+                soulMode = soulMode.trim().take(60).ifEmpty { "Empathetic Friend" },
+                note = note.trim().take(1000),
+                energyScore = energyScore.coerceIn(1L, 100L),
+                createdAt = now,
+                updatedAt = now
+            )
+            localMoodsFlow.value = listOf(item) + localMoodsFlow.value
+            return@runCatching id
+        }
+
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("moods").document()
+        val docRef = firestore.collection("users").document(uid).collection("moods").document()
         val payload = mapOf(
             "userId" to uid,
             "emotion" to emotion.trim().take(60).ifEmpty { "Calm" },
@@ -307,9 +438,62 @@ class ArcherRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun ensureStarterDataIfEmpty(userId: String) {
+        val firestore = db
+        if (firestore == null) {
+            if (localTasksFlow.value.isEmpty()) {
+                createTask(
+                    title = "Release desktop version 78",
+                    category = "Work",
+                    dueTime = "02:00 PM",
+                    priority = "HIGH"
+                )
+                createTask(
+                    title = "Upload video to TikTok",
+                    category = "Routine",
+                    dueTime = "05:30 PM",
+                    priority = "HIGH"
+                )
+                createTask(
+                    title = "সকালের ব্যায়াম ও ডেইলি ব্রিফিং চেক করা",
+                    category = "Routine",
+                    dueTime = "08:30 AM",
+                    priority = "MEDIUM"
+                )
+            }
+            if (localMeetingsFlow.value.isEmpty()) {
+                createMeeting(
+                    title = "জরুরি প্রজেক্ট ও ক্লায়েন্ট মিটিং (Urgent Sync)",
+                    startTime = "04:00 PM",
+                    remindBeforeMinutes = 15L,
+                    isUrgent = true,
+                    notes = "সপ্তাহের কাজের অগ্রগতি ও নতুন ফিচার ডেমো প্রস্তুত রাখা।"
+                )
+                createMeeting(
+                    title = "রাতের রুটিন ও আগামীকালের প্ল্যানিং",
+                    startTime = "09:30 PM",
+                    remindBeforeMinutes = 30L,
+                    isUrgent = false,
+                    notes = "সারাদিনের টাস্ক রিভিউ এবং মেমোরি আপডেট।"
+                )
+            }
+            if (localMemoriesFlow.value.isEmpty()) {
+                createMemory(
+                    content = "ব্যবহারকারী বাংলা ও ইংরেজি উভয় ভাষায় বন্ধুসুলভ ভয়েস অ্যাসিস্ট্যান্ট পছন্দ করেন এবং মিটিংয়ের ১৫ মিনিট আগে রিমাইন্ডার চান।",
+                    tag = "Preference",
+                    emotionContext = "Focused"
+                )
+                createMemory(
+                    content = "প্রতিদিন বিকেলে গ্যালারি থেকে শর্ট ভিডিও TikTok-এ আপলোড করার রুটিন রয়েছে।",
+                    tag = "Important",
+                    emotionContext = "Happy"
+                )
+            }
+            return
+        }
+
         val tasksPath = "users/$userId/tasks"
         try {
-            val existingTasks = db.collection("users").document(userId).collection("tasks")
+            val existingTasks = firestore.collection("users").document(userId).collection("tasks")
                 .whereEqualTo("userId", userId)
                 .limit(1)
                 .get()
@@ -335,7 +519,7 @@ class ArcherRepository(private val db: FirebaseFirestore) {
                 )
             }
 
-            val existingMeetings = db.collection("users").document(userId).collection("meetings")
+            val existingMeetings = firestore.collection("users").document(userId).collection("meetings")
                 .whereEqualTo("userId", userId)
                 .limit(1)
                 .get()
@@ -357,7 +541,7 @@ class ArcherRepository(private val db: FirebaseFirestore) {
                 )
             }
 
-            val existingMemories = db.collection("users").document(userId).collection("memories")
+            val existingMemories = firestore.collection("users").document(userId).collection("memories")
                 .whereEqualTo("userId", userId)
                 .limit(1)
                 .get()

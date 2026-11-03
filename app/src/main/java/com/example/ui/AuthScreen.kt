@@ -73,7 +73,9 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+import androidx.compose.material3.OutlinedButton
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.CoroutineScope
@@ -87,7 +89,16 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    if (Firebase.auth.currentUser != null) {
+    val isFirebaseReady = try {
+        FirebaseApp.getApps(context).isNotEmpty()
+    } catch (_: Throwable) {
+        false
+    }
+    if (!isFirebaseReady) {
+        onAuthSuccess()
+        return
+    }
+    if (try { Firebase.auth.currentUser != null } catch (_: Throwable) { false }) {
         onAuthSuccess()
         return
     }
@@ -98,7 +109,7 @@ fun attemptAutoSignIn(
         ""
     }
     if (clientId.isBlank()) {
-        onUnauthenticated()
+        onAuthSuccess()
         return
     }
 
@@ -178,7 +189,11 @@ fun signOutArcher(
     onSignOutComplete: () -> Unit,
     scope: CoroutineScope
 ) {
-    Firebase.auth.signOut()
+    try {
+        if (FirebaseApp.getApps(context).isNotEmpty()) {
+            Firebase.auth.signOut()
+        }
+    } catch (_: Throwable) {}
     scope.launch {
         try {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
@@ -371,6 +386,27 @@ fun AuthScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = { onAuthSuccess() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("continue_device_mode_button"),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, NeonQuantumCyan.copy(alpha = 0.7f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = NeonQuantumCyan
+                    )
+                ) {
+                    Text(
+                        text = "সরাসরি ARCHER AI-তে প্রবেশ করুন",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

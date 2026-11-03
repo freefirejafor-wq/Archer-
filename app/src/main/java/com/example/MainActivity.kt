@@ -16,12 +16,18 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ObsidianDeep
 import com.example.util.configureAppCheck
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOf
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,14 +60,38 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 }
 
 @Composable
-fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
-    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+fun AppNavigation() {
+    val context = LocalContext.current
+    val auth: FirebaseAuth? = remember(context) {
+        try {
+            if (FirebaseApp.getApps(context).isNotEmpty()) Firebase.auth else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+    val hasWebClientId = remember(context) {
+        try {
+            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            resId != 0 && context.getString(resId).isNotBlank()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    var localSessionUnlocked by remember { mutableStateOf(auth == null || !hasWebClientId) }
+    val currentUserFlow = remember(auth) {
+        auth?.authStateFlow() ?: flowOf(null)
+    }
+    val currentUser by currentUserFlow.collectAsStateWithLifecycle(initialValue = auth?.currentUser)
     val user = currentUser
-    if (user == null) {
+
+    if (user == null && !localSessionUnlocked) {
         AuthScreen(
-            onAuthSuccess = {}
+            onAuthSuccess = {
+                localSessionUnlocked = true
+            }
         )
     } else {
-        ArcherMainHudScreen(currentUserId = user.uid)
+        ArcherMainHudScreen(currentUserId = user?.uid ?: "local_archer_user")
     }
 }

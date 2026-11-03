@@ -120,6 +120,7 @@ import com.example.ui.theme.TextSecondaryHud
 import com.example.util.MobileActionExecutor
 import com.example.util.VoiceAudioEngine
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import java.util.Locale
@@ -149,10 +150,7 @@ fun ArcherMainHudScreen(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val dbResId = app.resources.getIdentifier("firestore_database_id", "string", app.packageName)
-                val databaseId = if (dbResId != 0) app.getString(dbResId) else "(default)"
-                val db = FirebaseFirestore.getInstance(databaseId)
-                ArcherViewModel(ArcherRepository(db), currentUserId)
+                ArcherViewModel(ArcherRepository(app), currentUserId)
             }
         }
     )
@@ -725,7 +723,11 @@ fun ArcherMainHudScreen(
                         SettingsAndVoiceConfigSheet(
                             preferredLanguage = preferredLanguage,
                             voiceMuted = voiceMuted,
-                            userEmail = Firebase.auth.currentUser?.email,
+                            userEmail = try {
+                                if (FirebaseApp.getApps(context).isNotEmpty()) Firebase.auth.currentUser?.email else null
+                            } catch (_: Throwable) {
+                                null
+                            },
                             onSelectLanguage = { lang -> viewModel.setPreferredLanguage(lang) },
                             onToggleMute = { viewModel.toggleVoiceMute() },
                             onSignOut = {
