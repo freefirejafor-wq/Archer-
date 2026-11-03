@@ -95,7 +95,7 @@ jobs:
           BUILD_EXIT=${PIPESTATUS[0]}
           if [ "$BUILD_EXIT" -ne 0 ]; then
             echo "=== EXACT GRADLE ERROR SUMMARY ==="
-            grep -n -A 25 -E "What went wrong:|Execution failed for task|e: file:" gradle_build.log || tail -n 60 gradle_build.log
+            grep -n -E "e: file:|Execution failed for task|What went wrong:|^> " gradle_build.log | grep -v -E "Run with --|Get more help" | tail -n 20 || true
             exit "$BUILD_EXIT"
           fi
 

@@ -1,7 +1,6 @@
 package com.example.data.repository
 
 import android.content.Context
-import com.example.R
 import com.example.data.OperationType
 import com.example.data.handleFirestoreError
 import com.example.data.model.MeetingAlert
@@ -24,11 +23,16 @@ import kotlinx.coroutines.tasks.await
 
 class ArcherRepository(private val db: FirebaseFirestore) {
 
-    constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
-    )
+    constructor(context: Context) : this(resolveFirestore(context))
+
+    companion object {
+        private fun resolveFirestore(context: Context): FirebaseFirestore {
+            val appCtx = context.applicationContext
+            val resId = appCtx.resources.getIdentifier("firestore_database_id", "string", appCtx.packageName)
+            val dbId = if (resId != 0) appCtx.getString(resId) else "(default)"
+            return FirebaseFirestore.getInstance(dbId)
+        }
+    }
 
     private val auth = Firebase.auth
 

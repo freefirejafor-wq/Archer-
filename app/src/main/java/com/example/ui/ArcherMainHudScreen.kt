@@ -149,7 +149,8 @@ fun ArcherMainHudScreen(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val databaseId = app.getString(R.string.firestore_database_id)
+                val dbResId = app.resources.getIdentifier("firestore_database_id", "string", app.packageName)
+                val databaseId = if (dbResId != 0) app.getString(dbResId) else "(default)"
                 val db = FirebaseFirestore.getInstance(databaseId)
                 ArcherViewModel(ArcherRepository(db), currentUserId)
             }
