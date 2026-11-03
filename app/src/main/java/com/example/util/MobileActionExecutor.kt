@@ -178,6 +178,57 @@ object MobileActionExecutor {
             MobileActionType.VIBRATE_DEVICE -> {
                 vibrateDevice(context, onActionStatus)
             }
+            MobileActionType.GO_ANDROID_HOME -> {
+                NotificationVoiceHelper.navigateToAndroidHomeScreen(context, onActionStatus)
+            }
+            MobileActionType.READ_NOTIFICATIONS -> {
+                NotificationVoiceHelper.postSystemNotification(
+                    context = context,
+                    title = "ARCHER AI • মেসেজ ও নোটিফিকেশন স্ক্যানার",
+                    body = command.payload.ifBlank { "জরুরি মিটিং ও মেসেজ নোটিফিকেশন ভয়েস রিডার সক্রিয় রয়েছে।" }
+                )
+                onActionStatus("নোটিফিকেশন ও মেসেজ ভয়েস অ্যালার্ট পড়া হচ্ছে...")
+            }
+            MobileActionType.MACRO_GOOD_MORNING -> {
+                setRingerSilent(context, false, onActionStatus)
+                setMediaVolumePercent(context, 80, onActionStatus)
+                setWindowBrightness(context, 85, onActionStatus)
+                onBrightnessStateChanged(85)
+                onTelemetryChanged()
+                NotificationVoiceHelper.postSystemNotification(
+                    context = context,
+                    title = "☀️ গুড মর্নিং আর্চার মোড চালু",
+                    body = "সাউন্ড ৮০%, ব্রাইটনেস ৮৫% এবং আজকের রুটিন ও মিটিং অ্যালার্ট প্রস্তুত।"
+                )
+                onActionStatus("☀️ গুড মর্নিং মোড চালু: সাউন্ড ৮০% ও ব্রাইটনেস ৮৫% সেট হয়েছে!")
+            }
+            MobileActionType.MACRO_CREATOR_MODE -> {
+                setRingerSilent(context, true, onActionStatus)
+                setWindowBrightness(context, 100, onActionStatus)
+                onBrightnessStateChanged(100)
+                copyToClipboard(
+                    context,
+                    "🔥 নতুন ভিডিও! কেমন লাগলো কমেন্টে জানান! #ArcherAI #Creator #Viral #TrendingBD #TikTokBD",
+                    onActionStatus
+                )
+                onTelemetryChanged()
+                onPickVideoForTikTok()
+                onActionStatus("🎬 ক্রিয়েটর মোড চালু: ব্রাইটনেস ১০০%, ভাইরাল হ্যাশট্যাগ কপি ও TikTok পিকার ওপেন!")
+            }
+            MobileActionType.MACRO_SLEEP_MODE -> {
+                setTorchMode(context, false, onActionStatus)
+                onTorchStateChanged(false)
+                setRingerSilent(context, true, onActionStatus)
+                setWindowBrightness(context, 15, onActionStatus)
+                onBrightnessStateChanged(15)
+                onTelemetryChanged()
+                NotificationVoiceHelper.postSystemNotification(
+                    context = context,
+                    title = "🌙 স্লিপ মোড চালু (ARCHER AI)",
+                    body = "ফ্ল্যাশলাইট অফ, ফোন সাইলেন্ট এবং ব্রাইটনেস ১৫% করা হয়েছে। শুভ রাত্রি!"
+                )
+                onActionStatus("🌙 স্লিপ মোড চালু: টর্চ অফ, সাইলেন্ট মোড ও ব্রাইটনেস ১৫%!")
+            }
             else -> Unit
         }
     }

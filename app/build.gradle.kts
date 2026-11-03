@@ -73,6 +73,16 @@ android {
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.
+val rootEnvFile = rootProject.file(".env")
+if (!rootEnvFile.exists()) {
+  val exampleEnvFile = rootProject.file(".env.example")
+  if (exampleEnvFile.exists()) {
+    exampleEnvFile.copyTo(rootEnvFile, overwrite = false)
+  } else {
+    rootEnvFile.writeText("")
+  }
+}
+
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"

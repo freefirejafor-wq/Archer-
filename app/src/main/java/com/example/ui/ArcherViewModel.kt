@@ -1004,7 +1004,115 @@ class ArcherViewModel(
             )
         }
 
-        // 10. Open any specific app by name ("ওপেন করো ...", "open ...")
+        // 10. Voice Screen Navigation ("এখান থেকে বাহির হও", "অন্য জায়গায় যাও", "হোমে যাও")
+        if (lower.contains("ফোনের হোমে") || lower.contains("phone home") || lower.contains("মিনিমাইজ")) {
+            return LocalCommandMatch(
+                spokenReply = "এখনই ফোনের মূল হোম স্ক্রিনে নিয়ে যাচ্ছি।",
+                phoneticReply = "Ekhoni phoner mul home screen e niye jachchi.",
+                emotion = "Calm",
+                actionType = MobileActionType.GO_ANDROID_HOME
+            )
+        }
+        if (lower.contains("বাহির") || lower.contains("বের হও") || lower.contains("বের কর") || lower.contains("হোমে যাও") || lower.contains("ব্যাকে যাও") || lower.contains("পিছনে যাও") || lower.contains("ফিরে চলো") || lower.contains("go back") || lower.contains("exit") || lower == "back" || lower == "home") {
+            return LocalCommandMatch(
+                spokenReply = "ঠিক আছে, এখান থেকে বের হয়ে মূল ARCHER AI স্ক্রিনে ফিরে এসেছি!",
+                phoneticReply = "Thik ache, ekhan theke ber hoye mul ARCHER AI screen e fire eshechi!",
+                emotion = "Calm",
+                actionType = MobileActionType.EXIT_CURRENT_SCREEN
+            )
+        }
+        if (lower.contains("কন্ট্রোল সেন্টার") || lower.contains("ফুল কন্ট্রোল") || lower.contains("অন্য জায়গায় যাও") || lower.contains("control center")) {
+            return LocalCommandMatch(
+                spokenReply = "এখনই ফুল ফোন কন্ট্রোল সেন্টারে নিয়ে যাচ্ছি!",
+                phoneticReply = "Ekhoni full phone control center e niye jachchi!",
+                emotion = "Focused",
+                actionType = MobileActionType.OPEN_CONTROL_CENTER
+            )
+        }
+        if (lower.contains("মেমোরি ভল্ট") || lower.contains("মেমোরিতে যাও") || lower.contains("মেমোরি খোলো") || lower.contains("memory vault")) {
+            return LocalCommandMatch(
+                spokenReply = "আপনার স্মার্ট মেমোরি ভল্ট ওপেন করে দিচ্ছি।",
+                phoneticReply = "Apnar smart memory vault open kore dichchi.",
+                emotion = "Focused",
+                actionType = MobileActionType.OPEN_MEMORY_VAULT
+            )
+        }
+        if (lower.contains("চ্যাটে যাও") || lower.contains("চ্যাট খোলো") || lower.contains("chat screen")) {
+            return LocalCommandMatch(
+                spokenReply = "চ্যাট এবং কমান্ড হিস্ট্রি স্ক্রিন ওপেন করছি।",
+                phoneticReply = "Chat ebong command history screen open korchi.",
+                emotion = "Focused",
+                actionType = MobileActionType.OPEN_CHAT_SCREEN
+            )
+        }
+        if (lower.contains("সোল মোড") || lower.contains("ইমোশন ট্র্যাকার") || lower.contains("soul mode")) {
+            return LocalCommandMatch(
+                spokenReply = "সোল পার্সোনালিটি ও ফোকাস টাইমার স্ক্রিনে নিয়ে যাচ্ছি।",
+                phoneticReply = "Soul personality o focus timer screen e niye jachchi.",
+                emotion = "Calm",
+                actionType = MobileActionType.OPEN_SOUL_SCREEN
+            )
+        }
+        if (lower.contains("টাস্ক দেখাও") || lower.contains("মিটিং লিস্ট") || lower.contains("রুটিন খোলো")) {
+            return LocalCommandMatch(
+                spokenReply = "আপনার প্রতিদিনের টাস্ক এবং মিটিং অ্যালার্ট প্যানেল ওপেন করছি।",
+                phoneticReply = "Apnar protidiner task ebong meeting alert panel open korchi.",
+                emotion = "Focused",
+                actionType = MobileActionType.OPEN_TASKS_SCREEN
+            )
+        }
+        if (lower.contains("সেটিংস খোলো") || lower.contains("ভয়েস সেটিংস")) {
+            return LocalCommandMatch(
+                spokenReply = "অ্যাপ ও ভয়েস সেটিংস প্যানেল ওপেন করে দিচ্ছি।",
+                phoneticReply = "App o voice settings panel open kore dichchi.",
+                emotion = "Focused",
+                actionType = MobileActionType.OPEN_SETTINGS_SCREEN
+            )
+        }
+
+        // 11. Incoming Notification & Message Voice Reader
+        if (lower.contains("নোটিফিকেশন") || lower.contains("মেসেজ এসেছে") || lower.contains("কে মেসেজ") || lower.contains("notification") || lower.contains("unread message")) {
+            val meetings = (meetingsState.value as? DataUiState.Success)?.data.orEmpty()
+            val tasks = ((tasksState.value as? DataUiState.Success)?.data.orEmpty()).filter { !it.completed }
+            val nextMeet = meetings.firstOrNull()?.let { "জরুরি মিটিং '${it.title}' (${it.startTime})" } ?: "কোনো জরুরি মিটিং পেন্ডিং নেই"
+            val nextTask = tasks.firstOrNull()?.let { "পরবর্তী কাজ '${it.title}' (${it.dueTime})" } ?: "সব টাস্ক সম্পন্ন"
+            val summarySpeech = "🔔 আপনার ফোনের নোটিফিকেশন ও মেসেজ আপডেট: ১) $nextMeet। ২) $nextTask। ৩) আপনার ফোনের নোটিফিকেশন ভয়েস অ্যানাউন্সার সক্রিয় রয়েছে।"
+            return LocalCommandMatch(
+                spokenReply = summarySpeech,
+                phoneticReply = "Apnar phoner notification o message update prostut: $nextMeet, ebong $nextTask.",
+                emotion = "Focused",
+                actionType = MobileActionType.READ_NOTIFICATIONS,
+                payload = summarySpeech
+            )
+        }
+
+        // 12. Smart One-Command Voice Macros ("গুড মর্নিং", "ক্রিয়েটর মোড", "স্লিপ মোড")
+        if (lower.contains("গুড মর্নিং") || lower.contains("শুভ সকাল") || lower.contains("good morning")) {
+            return LocalCommandMatch(
+                spokenReply = "শুভ সকাল! গুড মর্নিং মোড চালু করেছি—ফোন আনমিউট, সাউন্ড ৮০% ও ব্রাইটনেস ৮৫% করা হয়েছে। আজকের দিনটি অসাধারণ কাটুক!",
+                phoneticReply = "Shubho shokal! Good morning mode chalu korechi, phone unmute, sound 80 percent o brightness 85 percent kora hoyeche.",
+                emotion = "Happy",
+                actionType = MobileActionType.MACRO_GOOD_MORNING
+            )
+        }
+        if (lower.contains("ক্রিয়েটর মোড") || lower.contains("ক্রিয়েটর মোড") || lower.contains("creator mode")) {
+            return LocalCommandMatch(
+                spokenReply = "ক্রিয়েটর মোড অ্যাক্টিভেটেড! ফোন ডু-নট-ডিস্টার্ব সাইলেন্ট করা হয়েছে, ব্রাইটনেস ১০০%, ভাইরাল হ্যাশট্যাগ ক্লিপবোর্ডে কপি করা হয়েছে এবং ভিডিও পিকার ওপেন হচ্ছে!",
+                phoneticReply = "Creator mode activated! Brightness 100 percent, viral hashtag copy kora hoyeche ebong video picker open hochche!",
+                emotion = "Excited",
+                actionType = MobileActionType.MACRO_CREATOR_MODE
+            )
+        }
+        if (lower.contains("স্লিপ মোড") || lower.contains("গুড নাইট") || lower.contains("শুভ রাত্রি") || lower.contains("sleep mode") || lower.contains("good night")) {
+            return LocalCommandMatch(
+                spokenReply = "শুভ রাত্রি! স্লিপ মোড চালু করা হয়েছে—ফ্ল্যাশলাইট অফ, ফোন সাইলেন্ট এবং চোখের আরামের জন্য ব্রাইটনেস ১৫% করে দিয়েছি।",
+                phoneticReply = "Shubho ratri! Sleep mode chalu kora hoyeche, flashlight off, phone silent ebong brightness 15 percent kore diyechi.",
+                emotion = "Calm",
+                actionType = MobileActionType.MACRO_SLEEP_MODE
+            )
+        }
+
+        // 13. Open any specific app by name ("ওপেন করো ...", "open ...")
         if (lower.contains("অ্যাপ খোলো") || lower.contains("ওপেন করো") || lower.startsWith("open ")) {
             val targetApp = input.replace(Regex("(?i)(অ্যাপ খোলো|ওপেন করো|খোলো|open|app)"), "").trim()
             if (targetApp.isNotBlank()) {

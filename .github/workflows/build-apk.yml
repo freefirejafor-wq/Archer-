@@ -2,9 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
   workflow_dispatch:
 
 jobs:
@@ -21,19 +21,48 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Decode debug keystore
+      - name: Set up Android SDK & Accept Licenses
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses
         run: |
-          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Ensure .env file exists for Secrets Gradle Plugin
+        run: |
+          if [ ! -f ".env" ]; then
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              touch .env
+            fi
           fi
 
-      - name: Setup Gradle
+      - name: Decode or generate debug.keystore
+        run: |
+          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
+            base64 -di debug.keystore.base64 > debug.keystore || true
+          fi
+          if [ ! -s "debug.keystore" ]; then
+            rm -f debug.keystore
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

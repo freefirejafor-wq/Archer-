@@ -139,7 +139,20 @@ enum class MobileActionType {
     SEARCH_WEB,
     ADD_CALENDAR_EVENT,
     COPY_CLIPBOARD,
-    VIBRATE_DEVICE
+    VIBRATE_DEVICE,
+    // Voice Screen Navigation & Smart Notification / Macro Actions
+    EXIT_CURRENT_SCREEN,
+    GO_ANDROID_HOME,
+    OPEN_CONTROL_CENTER,
+    OPEN_MEMORY_VAULT,
+    OPEN_CHAT_SCREEN,
+    OPEN_SOUL_SCREEN,
+    OPEN_TASKS_SCREEN,
+    OPEN_SETTINGS_SCREEN,
+    READ_NOTIFICATIONS,
+    MACRO_GOOD_MORNING,
+    MACRO_CREATOR_MODE,
+    MACRO_SLEEP_MODE
 }
 
 data class DeviceActionCommand(

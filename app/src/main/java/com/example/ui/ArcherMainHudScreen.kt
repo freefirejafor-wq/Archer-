@@ -554,51 +554,78 @@ fun ArcherMainHudScreen(
         }
     }
 
-    // Collect Mobile Action commands from ViewModel
+    // Collect Mobile Action commands from ViewModel (including Voice Screen Navigation)
     LaunchedEffect(Unit) {
         viewModel.deviceActionEvent.collect { cmd ->
-            MobileActionExecutor.executeAction(
-                context = context,
-                command = cmd,
-                onPickVideoForTikTok = {
-                    tikTokVideoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            when (cmd.type) {
+                MobileActionType.EXIT_CURRENT_SCREEN -> {
+                    activeOverlay = ActiveOverlayScreen.NONE
+                    viewModel.setActionStatusBanner("মূল ARCHER AI স্ক্রিনে ফিরে আসা হয়েছে।")
+                }
+                MobileActionType.OPEN_CONTROL_CENTER -> {
+                    refreshDeviceTelemetry()
+                    activeOverlay = ActiveOverlayScreen.MOBILE_CONTROL_CENTER
+                }
+                MobileActionType.OPEN_MEMORY_VAULT -> {
+                    activeOverlay = ActiveOverlayScreen.MEMORY
+                }
+                MobileActionType.OPEN_CHAT_SCREEN -> {
+                    activeOverlay = ActiveOverlayScreen.CHAT
+                }
+                MobileActionType.OPEN_SOUL_SCREEN -> {
+                    activeOverlay = ActiveOverlayScreen.SOUL
+                }
+                MobileActionType.OPEN_TASKS_SCREEN -> {
+                    activeOverlay = ActiveOverlayScreen.TASKS_AND_MEETINGS
+                }
+                MobileActionType.OPEN_SETTINGS_SCREEN -> {
+                    activeOverlay = ActiveOverlayScreen.SETTINGS
+                }
+                else -> {
+                    MobileActionExecutor.executeAction(
+                        context = context,
+                        command = cmd,
+                        onPickVideoForTikTok = {
+                            tikTokVideoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            )
+                        },
+                        onOpenGalleryPicker = {
+                            galleryMediaPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                            )
+                        },
+                        onRequestCameraPhoto = {
+                            pendingCameraVideoMode = false
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                MobileActionExecutor.launchCameraIntent(context, false) { viewModel.setActionStatusBanner(it) }
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        },
+                        onRequestCameraVideo = {
+                            pendingCameraVideoMode = true
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                MobileActionExecutor.launchCameraIntent(context, true) { viewModel.setActionStatusBanner(it) }
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        },
+                        onTorchStateChanged = { enabled ->
+                            isTorchOnState = enabled
+                            refreshDeviceTelemetry()
+                        },
+                        onBrightnessStateChanged = { level ->
+                            brightnessPercentState = level
+                            refreshDeviceTelemetry()
+                        },
+                        onTelemetryChanged = {
+                            refreshDeviceTelemetry()
+                        },
+                        onActionStatus = { msg -> viewModel.setActionStatusBanner(msg) }
                     )
-                },
-                onOpenGalleryPicker = {
-                    galleryMediaPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                    )
-                },
-                onRequestCameraPhoto = {
-                    pendingCameraVideoMode = false
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        MobileActionExecutor.launchCameraIntent(context, false) { viewModel.setActionStatusBanner(it) }
-                    } else {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                onRequestCameraVideo = {
-                    pendingCameraVideoMode = true
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        MobileActionExecutor.launchCameraIntent(context, true) { viewModel.setActionStatusBanner(it) }
-                    } else {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                onTorchStateChanged = { enabled ->
-                    isTorchOnState = enabled
-                    refreshDeviceTelemetry()
-                },
-                onBrightnessStateChanged = { level ->
-                    brightnessPercentState = level
-                    refreshDeviceTelemetry()
-                },
-                onTelemetryChanged = {
-                    refreshDeviceTelemetry()
-                },
-                onActionStatus = { msg -> viewModel.setActionStatusBanner(msg) }
-            )
+                }
+            }
         }
     }
 
@@ -607,117 +634,191 @@ fun ArcherMainHudScreen(
     val memories = (memoriesState as? DataUiState.Success)?.data.orEmpty()
     val moodLogs = (moodsState as? DataUiState.Success)?.data.orEmpty()
 
-    // --- 4. SUB-SCREEN OVERLAY ROUTING ---
+    // --- 4. SUB-SCREEN OVERLAY ROUTING WITH PERSISTENT VOICE NAVIGATION DOCK ---
 
-    when (activeOverlay) {
-        ActiveOverlayScreen.MEMORY -> {
-            MemoryVaultSheet(
-                memories = memories,
-                onAddMemory = { content, tag -> viewModel.addMemory(content, tag) },
-                onDeleteMemory = { id -> viewModel.deleteMemory(id) },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
-        }
-        ActiveOverlayScreen.CHAT -> {
-            ChatAndMobileCommanderSheet(
-                chatHistory = chatHistory,
-                onSendCommand = { text -> viewModel.sendUserCommandOrSpeech(text) },
-                onStartVoiceInput = {
-                    activeOverlay = ActiveOverlayScreen.NONE
-                    handleListenOrStopToggle()
-                },
-                onQuickAction = { cmd -> viewModel.triggerQuickDeviceAction(cmd) },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
-        }
-        ActiveOverlayScreen.SOUL -> {
-            SoulAndEmotionSheet(
-                selectedSoul = selectedSoul,
-                detectedEmotion = detectedEmotion,
-                moodLogs = moodLogs,
-                focusSecondsRemaining = focusSecondsRemaining,
-                isFocusTimerRunning = isFocusTimerRunning,
-                onSelectSoul = { soul -> viewModel.setSoulPersonality(soul) },
-                onToggleFocusTimer = { viewModel.toggleFocusTimer() },
-                onResetFocusTimer = { viewModel.resetFocusTimer() },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
-        }
-        ActiveOverlayScreen.TASKS_AND_MEETINGS -> {
-            TasksAndMeetingsSheet(
-                tasks = tasks,
-                meetings = meetings,
-                onAddTask = { title, cat, time, prio -> viewModel.addTask(title, cat, time, prio) },
-                onToggleTask = { task -> viewModel.toggleTask(task) },
-                onDeleteTask = { id -> viewModel.deleteTask(id) },
-                onAddMeeting = { title, time, mins, urgent, notes ->
-                    viewModel.addMeeting(title, time, mins, urgent, notes)
-                },
-                onDeleteMeeting = { id -> viewModel.deleteMeeting(id) },
-                onSpeakMeetingAlert = { meeting ->
-                    val alertSpeech = "জরুরি মিটিং রিমাইন্ডার: ${meeting.title}, শুরু হবে ${meeting.startTime} সময়ে। আমাদের হাতে ${meeting.remindBeforeMinutes} মিনিট সময় আছে।"
-                    viewModel.setActionStatusBanner(alertSpeech)
-                    VoiceAudioEngine.speakSmartBilingual(
-                        context = context,
-                        tts = ttsEngine,
-                        text = alertSpeech,
-                        phoneticHint = "Joruri meeting reminder: ${meeting.title}, shuru hobe ${meeting.startTime} shomoye.",
-                        onFallbackDone = { viewModel.setOrbState(OrbState.IDLE) }
-                    )
-                },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
-        }
-        ActiveOverlayScreen.MOBILE_CONTROL_CENTER -> {
-            MobileControlCenterSheet(
-                telemetry = deviceTelemetry,
-                installedApps = installedApps,
-                onExecuteCommand = { cmd -> viewModel.triggerQuickDeviceAction(cmd) },
-                onMediaVolumeChange = { pct ->
-                    MobileActionExecutor.setMediaVolumePercent(context, pct) { viewModel.setActionStatusBanner(it) }
-                    refreshDeviceTelemetry()
-                },
-                onRingVolumeChange = { pct ->
-                    MobileActionExecutor.setRingVolumePercent(context, pct) { viewModel.setActionStatusBanner(it) }
-                    refreshDeviceTelemetry()
-                },
-                onBrightnessChange = { pct ->
-                    brightnessPercentState = pct
-                    MobileActionExecutor.setWindowBrightness(context, pct) { viewModel.setActionStatusBanner(it) }
-                },
-                onLaunchInstalledApp = { appInfo ->
-                    MobileActionExecutor.launchPackageDirectly(context, appInfo.packageName, appInfo.appName) {
-                        viewModel.setActionStatusBanner(it)
+    if (activeOverlay != ActiveOverlayScreen.NONE) {
+        Column(modifier = Modifier.fillMaxSize().background(ObsidianDeep)) {
+            Box(modifier = Modifier.weight(1f)) {
+                when (activeOverlay) {
+                    ActiveOverlayScreen.MEMORY -> {
+                        MemoryVaultSheet(
+                            memories = memories,
+                            onAddMemory = { content, tag -> viewModel.addMemory(content, tag) },
+                            onDeleteMemory = { id -> viewModel.deleteMemory(id) },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
                     }
-                },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
-        }
-        ActiveOverlayScreen.SETTINGS -> {
-            SettingsAndVoiceConfigSheet(
-                preferredLanguage = preferredLanguage,
-                voiceMuted = voiceMuted,
-                userEmail = Firebase.auth.currentUser?.email,
-                onSelectLanguage = { lang -> viewModel.setPreferredLanguage(lang) },
-                onToggleMute = { viewModel.toggleVoiceMute() },
-                onSignOut = {
-                    signOutArcher(
-                        context = context,
-                        credentialManager = credentialManager,
-                        onSignOutComplete = {},
-                        scope = coroutineScope
+                    ActiveOverlayScreen.CHAT -> {
+                        ChatAndMobileCommanderSheet(
+                            chatHistory = chatHistory,
+                            onSendCommand = { text -> viewModel.sendUserCommandOrSpeech(text) },
+                            onStartVoiceInput = { handleListenOrStopToggle() },
+                            onQuickAction = { cmd -> viewModel.triggerQuickDeviceAction(cmd) },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
+                    }
+                    ActiveOverlayScreen.SOUL -> {
+                        SoulAndEmotionSheet(
+                            selectedSoul = selectedSoul,
+                            detectedEmotion = detectedEmotion,
+                            moodLogs = moodLogs,
+                            focusSecondsRemaining = focusSecondsRemaining,
+                            isFocusTimerRunning = isFocusTimerRunning,
+                            onSelectSoul = { soul -> viewModel.setSoulPersonality(soul) },
+                            onToggleFocusTimer = { viewModel.toggleFocusTimer() },
+                            onResetFocusTimer = { viewModel.resetFocusTimer() },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
+                    }
+                    ActiveOverlayScreen.TASKS_AND_MEETINGS -> {
+                        TasksAndMeetingsSheet(
+                            tasks = tasks,
+                            meetings = meetings,
+                            onAddTask = { title, cat, time, prio -> viewModel.addTask(title, cat, time, prio) },
+                            onToggleTask = { task -> viewModel.toggleTask(task) },
+                            onDeleteTask = { id -> viewModel.deleteTask(id) },
+                            onAddMeeting = { title, time, mins, urgent, notes ->
+                                viewModel.addMeeting(title, time, mins, urgent, notes)
+                            },
+                            onDeleteMeeting = { id -> viewModel.deleteMeeting(id) },
+                            onSpeakMeetingAlert = { meeting ->
+                                val alertSpeech = "জরুরি মিটিং রিমাইন্ডার: ${meeting.title}, শুরু হবে ${meeting.startTime} সময়ে। আমাদের হাতে ${meeting.remindBeforeMinutes} মিনিট সময় আছে।"
+                                viewModel.setActionStatusBanner(alertSpeech)
+                                VoiceAudioEngine.speakSmartBilingual(
+                                    context = context,
+                                    tts = ttsEngine,
+                                    text = alertSpeech,
+                                    phoneticHint = "Joruri meeting reminder: ${meeting.title}, shuru hobe ${meeting.startTime} shomoye.",
+                                    onFallbackDone = { viewModel.setOrbState(OrbState.IDLE) }
+                                )
+                            },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
+                    }
+                    ActiveOverlayScreen.MOBILE_CONTROL_CENTER -> {
+                        MobileControlCenterSheet(
+                            telemetry = deviceTelemetry,
+                            installedApps = installedApps,
+                            onExecuteCommand = { cmd -> viewModel.triggerQuickDeviceAction(cmd) },
+                            onMediaVolumeChange = { pct ->
+                                MobileActionExecutor.setMediaVolumePercent(context, pct) { viewModel.setActionStatusBanner(it) }
+                                refreshDeviceTelemetry()
+                            },
+                            onRingVolumeChange = { pct ->
+                                MobileActionExecutor.setRingVolumePercent(context, pct) { viewModel.setActionStatusBanner(it) }
+                                refreshDeviceTelemetry()
+                            },
+                            onBrightnessChange = { pct ->
+                                brightnessPercentState = pct
+                                MobileActionExecutor.setWindowBrightness(context, pct) { viewModel.setActionStatusBanner(it) }
+                            },
+                            onLaunchInstalledApp = { appInfo ->
+                                MobileActionExecutor.launchPackageDirectly(context, appInfo.packageName, appInfo.appName) {
+                                    viewModel.setActionStatusBanner(it)
+                                }
+                            },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
+                    }
+                    ActiveOverlayScreen.SETTINGS -> {
+                        SettingsAndVoiceConfigSheet(
+                            preferredLanguage = preferredLanguage,
+                            voiceMuted = voiceMuted,
+                            userEmail = Firebase.auth.currentUser?.email,
+                            onSelectLanguage = { lang -> viewModel.setPreferredLanguage(lang) },
+                            onToggleMute = { viewModel.toggleVoiceMute() },
+                            onSignOut = {
+                                signOutArcher(
+                                    context = context,
+                                    credentialManager = credentialManager,
+                                    onSignOutComplete = {},
+                                    scope = coroutineScope
+                                )
+                            },
+                            onClose = { activeOverlay = ActiveOverlayScreen.NONE }
+                        )
+                    }
+                    ActiveOverlayScreen.NONE -> Unit
+                }
+            }
+
+            // Persistent Voice Navigation Bar visible inside EVERY open sub-screen
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = ObsidianSurface,
+                border = BorderStroke(1.5.dp, NeonMatrixGreen)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { handleListenOrStopToggle() }
+                            .testTag("overlay_persistent_mic_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (orbState == OrbState.LISTENING) NeonCrimson else NeonMatrixGreen
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (orbState == OrbState.LISTENING) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = "Voice Command",
+                                tint = ObsidianDeep,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (orbState == OrbState.LISTENING) "থামুন" else "🎙️ ভয়েস কমান্ড",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = ObsidianDeep,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = userTranscript,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextPrimaryHud,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                },
-                onClose = { activeOverlay = ActiveOverlayScreen.NONE }
-            )
-            return
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                viewModel.sendUserCommandOrSpeech("এখান থেকে বাহির হও")
+                            }
+                            .testTag("overlay_voice_exit_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = ObsidianCard,
+                        border = BorderStroke(1.dp, NeonQuantumCyan)
+                    ) {
+                        Text(
+                            text = "⬅️ বাহির হও",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonQuantumCyan,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
         }
-        ActiveOverlayScreen.NONE -> Unit
+        return
     }
 
     // --- 5. MAIN ARCHER AI HUD DASHBOARD ---
@@ -1179,6 +1280,11 @@ private fun InstantSpokenVoiceChipStrip(
 ) {
     val phrases = remember {
         listOf(
+            "নোটিফিকেশন ও মেসেজ বলো",
+            "গুড মর্নিং আর্চার",
+            "ক্রিয়েটর মোড",
+            "স্লিপ মোড",
+            "কন্ট্রোল সেন্টারে যাও",
             "ফ্ল্যাশলাইট অন করো",
             "টিকটকে ভিডিও আপলোড করো",
             "ক্যামেরা ওপেন করো",
@@ -1187,9 +1293,7 @@ private fun InstantSpokenVoiceChipStrip(
             "ফোন সাইলেন্ট করো",
             "ওয়াইফাই প্যানেল খোলো",
             "ইউটিউবে গান চালাও",
-            "আজকের কাজ ও মিটিং বলো",
-            "আমার ফোনের ব্যাটারি কত?",
-            "আমার মন একটু খারাপ"
+            "আজকের কাজ ও মিটিং বলো"
         )
     }
 
