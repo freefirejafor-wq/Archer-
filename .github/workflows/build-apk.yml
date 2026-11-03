@@ -21,14 +21,38 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Accept Android SDK Licenses
+      - name: Configure Android SDK, Licenses & Platform 36
         run: |
           SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          sudo chown -R "$(id -u):$(id -g)" "$SDK_DIR" 2>/dev/null || true
+          chmod -R u+rwX "$SDK_DIR" 2>/dev/null || true
+
           mkdir -p "$SDK_DIR/licenses"
           printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > "$SDK_DIR/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
+          printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6\n" > "$SDK_DIR/licenses/android-googletv-license"
+          printf "\nceff83576aac4f7f37cb98fe189e9fb3c49d3b81\n" > "$SDK_DIR/licenses/android-googlexr-license"
+          printf "\n859f317696f67ef3d7f30a50a5560e7834b43903\n" > "$SDK_DIR/licenses/android-sdk-arm-dbt-license"
+          printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a\n" > "$SDK_DIR/licenses/google-gdk-license"
 
-      - name: Ensure .env file exists for Secrets Gradle Plugin
+          SDKMANAGER=""
+          for candidate in \
+            "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_DIR/cmdline-tools/bin/sdkmanager" \
+            "$(command -v sdkmanager 2>/dev/null || true)"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$SDKMANAGER" ] && [ ! -d "$SDK_DIR/platforms/android-36" ]; then
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" "platforms;android-36" "build-tools;36.0.0" </dev/null || true
+          fi
+
+      - name: Ensure .env and debug.keystore exist
         run: |
           if [ ! -f ".env" ]; then
             if [ -f ".env.example" ]; then
@@ -38,8 +62,6 @@ jobs:
             fi
           fi
 
-      - name: Decode or generate debug.keystore
-        run: |
           if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
             tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore || true
           fi
@@ -62,7 +84,20 @@ jobs:
           gradle-version: '9.3.1'
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon --no-configuration-cache --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleDebug \
+            --no-daemon \
+            --no-configuration-cache \
+            -Pkotlin.compiler.execution.strategy=daemon \
+            --max-workers=2 \
+            --console=plain 2>&1 | tee gradle_build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ "$BUILD_EXIT" -ne 0 ]; then
+            echo "=== EXACT GRADLE ERROR SUMMARY ==="
+            grep -n -A 25 -E "What went wrong:|Execution failed for task|e: file:" gradle_build.log || tail -n 60 gradle_build.log
+            exit "$BUILD_EXIT"
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
